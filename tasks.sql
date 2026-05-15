@@ -1,0 +1,126 @@
+USE WAREHOUSE LOGISTICS_WH;
+USE DATABASE LOGISTICS_DB;
+USE SCHEMA ANALYTICS_SCHEMA;
+
+CREATE OR REPLACE STREAM SHIPMENT_STREAM
+ON TABLE LOGISTICS_DB.SUPPLY_CHAIN_SCHEMA.SHIPMENT;
+SHOW STREAMS;
+SELECT * FROM SHIPMENT_STREAM;
+
+INSERT INTO LOGISTICS_DB.SUPPLY_CHAIN_SCHEMA.SHIPMENT
+VALUES (
+    'S99999',
+    'Chennai',
+    'Mumbai',
+    'In Transit',
+    'V0001',
+    'D0001',
+    '2026-05-01',
+    '2026-05-07',
+    1200,
+    'No Alert',
+    'No'
+);
+SELECT * FROM SHIPMENT_STREAM;
+
+CREATE OR REPLACE TABLE PROCESSED_SHIPMENT (
+    shipmentId STRING,
+    sourceLocation STRING,
+    destinationLocation STRING,
+    shipmentStatus STRING,
+    vehicleId STRING,
+    driverId STRING,
+    dispatchDate DATE,
+    deliveryDate DATE,
+    shipmentWeight NUMBER,
+    deliveryAlert STRING
+);
+
+CREATE OR REPLACE TASK SHIPMENT_TASK
+WAREHOUSE = LOGISTICS_WH
+SCHEDULE = '1 MINUTE'
+AS
+INSERT INTO PROCESSED_SHIPMENT
+SELECT
+    shipmentId,
+    sourceLocation,
+    destinationLocation,
+    shipmentStatus,
+    vehicleId,
+    driverId,
+    dispatchDate,
+    deliveryDate,
+    shipmentWeight,
+    deliveryAlert
+FROM SHIPMENT_STREAM
+WHERE METADATA$ACTION = 'INSERT';
+
+ALTER TASK SHIPMENT_TASK RESUME;
+SHOW TASKS;
+
+SELECT * FROM PROCESSED_SHIPMENT;
+
+CREATE OR REPLACE DYNAMIC TABLE DT_SHIPMENT_ANALYTICS
+TARGET_LAG = '1 minute'
+WAREHOUSE = LOGISTICS_WH
+AS
+SELECT
+    shipmentStatus,
+    COUNT(*) AS total_shipments,
+    SUM(shipmentWeight) AS total_weight
+FROM LOGISTICS_DB.SUPPLY_CHAIN_SCHEMA.SHIPMENT
+GROUP BY shipmentStatus;
+SELECT * FROM DT_SHIPMENT_ANALYTICS;
+
+INSERT INTO LOGISTICS_DB.SUPPLY_CHAIN_SCHEMA.SHIPMENT
+VALUES (
+    'S99998',
+    'Delhi',
+    'Bangalore',
+    'Delayed',
+    'V0002',
+    'D0002',
+    '2026-05-02',
+    '2026-05-08',
+    1800,
+    'Triggered',
+    'No'
+);
+
+SELECT * FROM DT_SHIPMENT_ANALYTICS;
+
+CREATE OR REPLACE VIEW VW_DELAYED_SHIPMENTS AS
+SELECT
+    shipmentId,
+    sourceLocation,
+    destinationLocation,
+    shipmentStatus,
+    deliveryAlert
+FROM LOGISTICS_DB.SUPPLY_CHAIN_SCHEMA.SHIPMENT
+WHERE shipmentStatus = 'Delayed';
+SELECT * FROM VW_DELAYED_SHIPMENTS;
+
+CREATE OR REPLACE VIEW VW_WAREHOUSE_UTILIZATION AS
+SELECT
+    city,
+    COUNT(*) AS warehouse_count,
+    SUM(storageCapacity) AS total_capacity
+FROM DIM_WAREHOUSE
+GROUP BY city;
+SELECT * FROM VW_WAREHOUSE_UTILIZATION;
+
+CREATE OR REPLACE VIEW VW_FUEL_ANALYTICS AS
+SELECT
+    vehicleId,
+    SUM(fuelCost) AS total_fuel_cost,
+    AVG(fuelCost) AS avg_fuel_cost
+FROM LOGISTICS_DB.SUPPLY_CHAIN_SCHEMA.FUEL_TRANSACTION
+GROUP BY vehicleId;
+SELECT*FROM VW_FUEL_ANALYTICS;
+
+SELECT *
+FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY())
+ORDER BY SCHEDULED_TIME DESC;
+
+SHOW DYNAMIC TABLES;
+
