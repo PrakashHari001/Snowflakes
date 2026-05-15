@@ -1,0 +1,119 @@
+USE WAREHOUSE LOGISTICS_WH;
+
+CREATE OR REPLACE DATABASE LOGISTICS_DB;
+USE DATABASE LOGISTICS_DB;
+
+CREATE OR REPLACE SCHEMA SUPPLY_CHAIN_SCHEMA;
+USE SCHEMA SUPPLY_CHAIN_SCHEMA;
+
+CREATE OR REPLACE FILE FORMAT CSV_FORMAT
+TYPE = 'CSV'
+FIELD_OPTIONALLY_ENCLOSED_BY='"'
+SKIP_HEADER = 1
+DATE_FORMAT = 'DD-MM-YYYY';
+
+CREATE OR REPLACE FILE FORMAT JSON_FORMAT
+TYPE = 'JSON';
+
+CREATE OR REPLACE STAGE LOGISTICS_STAGE;
+SHOW STAGES;
+
+CREATE OR REPLACE TABLE VEHICLE (
+    vehicleId STRING,
+    vehicleType STRING,
+    capacity NUMBER,
+    availabilityStatus STRING
+);
+
+CREATE OR REPLACE TABLE DRIVER (
+    driverId STRING,
+    driverName STRING,
+    licenseNumber STRING,
+    contactNumber STRING
+);
+
+CREATE OR REPLACE TABLE WAREHOUSE (
+    warehouseId STRING,
+    warehouseName STRING,
+    city STRING,
+    storageCapacity NUMBER
+);
+
+CREATE OR REPLACE TABLE SHIPMENT (
+    shipmentId STRING,
+    sourceLocation STRING,
+    destinationLocation STRING,
+    shipmentStatus STRING,
+    vehicleId STRING,
+    driverId STRING,
+    dispatchDate DATE,
+    deliveryDate DATE,
+    shipmentWeight NUMBER,
+    deliveryAlert STRING,
+    readOnlyFlag STRING
+);
+
+CREATE OR REPLACE TABLE FUEL_TRANSACTION (
+    transactionId STRING,
+    vehicleId STRING,
+    fuelAmount FLOAT,
+    fuelCost FLOAT,
+    transactionDate DATE
+);
+
+CREATE OR REPLACE TABLE SHIPMENT_JSON_RAW (
+    raw_data VARIANT
+);
+
+
+
+COPY INTO VEHICLE
+FROM @LOGISTICS_STAGE/Vehicle.csv
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT);
+
+COPY INTO DRIVER
+FROM @LOGISTICS_STAGE/Driver.csv
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT);
+
+COPY INTO WAREHOUSE
+FROM @LOGISTICS_STAGE/Warehouse.csv
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT);
+
+COPY INTO SHIPMENT
+FROM @LOGISTICS_STAGE/Shipment.csv
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT);
+
+COPY INTO FUEL_TRANSACTION
+FROM @LOGISTICS_STAGE/FuelTransaction.csv
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT);
+
+
+COPY INTO SHIPMENT_JSON_RAW
+FROM @LOGISTICS_STAGE/Shipment.json
+FILE_FORMAT = (FORMAT_NAME = JSON_FORMAT);
+
+
+
+SELECT
+    value:shipmentId::STRING AS shipment_id,
+    value:shipmentStatus::STRING AS shipment_status,
+    value:sourceLocation::STRING AS source_location,
+    value:destinationLocation::STRING AS destination_location
+FROM SHIPMENT_JSON_RAW,
+LATERAL FLATTEN(input => raw_data);
+
+SELECT shipmentId, COUNT(*)
+FROM SHIPMENT
+GROUP BY shipmentId
+HAVING COUNT(*) > 1;
+
+SELECT *
+FROM SHIPMENT
+WHERE deliveryDate < dispatchDate;
+
+SELECT *
+FROM FUEL_TRANSACTION
+WHERE fuelCost < 0;
+
+
+
